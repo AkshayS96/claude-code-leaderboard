@@ -21,17 +21,21 @@ interface Profile {
 
 export default function LeaderboardPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [stats, setStats] = useState({ peak_throughput: 0 });
   const [loading, setLoading] = useState(true);
 
   const fetchLeaderboard = async () => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('total_tokens', { ascending: false })
-      .limit(50);
+    try {
+      const res = await fetch('/api/leaderboard', { cache: 'no-store' });
+      const data = await res.json();
 
-    if (data) setProfiles(data as Profile[]);
-    setLoading(false);
+      if (data.users) setProfiles(data.users);
+      if (data.stats) setStats(data.stats);
+    } catch (e) {
+      console.error("Failed to fetch leaderboard", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -40,6 +44,9 @@ export default function LeaderboardPage() {
     const channel = supabase
       .channel('leaderboard-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
+        // We can just refetch everything to be safe and get fresh stats if we wanted, 
+        // but stats might not update from postgres changes. 
+        // For now, let's just refetch.
         fetchLeaderboard();
       })
       .subscribe();
@@ -79,7 +86,7 @@ export default function LeaderboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           <StatCard label="Active Nodes" value={profiles.length.toString()} icon={<Cpu />} />
-          <StatCard label="Peak T/s" value="48.2K" icon={<Zap />} />
+          <StatCard label="Peak T/s" value={formatCompactNumber(stats.peak_throughput)} icon={<Zap />} />
           <StatCard label="System Status" value="ONLINE" icon={<Activity />} />
         </div>
 

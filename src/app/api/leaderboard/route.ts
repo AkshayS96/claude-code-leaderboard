@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { LeaderboardUser } from '@/lib/types';
+import { redis } from '@/lib/redis';
 
 export const revalidate = 30; // 30s cache
+
+// ...
 
 export async function GET() {
     try {
@@ -32,7 +35,15 @@ export async function GET() {
             };
         });
 
-        return NextResponse.json(users);
+        // Fetch System Stats
+        const peakThroughput = await redis.get('system:throughput:peak');
+
+        return NextResponse.json({
+            users,
+            stats: {
+                peak_throughput: Number(peakThroughput) || 0
+            }
+        });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }
