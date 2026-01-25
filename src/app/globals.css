@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  --color-claude-orange: #EB5B39;
+  /* Claude Code Orange */
+  --color-zinc-900: #18181b;
+  --color-zinc-100: #f4f4f5;
+}
+
+:root {
+  --foreground-rgb: 24, 24, 27;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 250, 250, 245;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  font-family: 'JetBrains Mono', monospace;
+}
+
+@layer utilities {
+  .text-claude {
+    color: var(--color-claude-orange);
+  }
+
+  .bg-claude {
+    background-color: var(--color-claude-orange);
+  }
+
+  .border-claude {
+    border-color: var(--color-claude-orange);
+  }
+
+  .glass-panel {
+    background-color: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* Scanline effect */
+.scanlines::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(to bottom,
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.25) 50%);
+  background-size: 100% 4px;
+  z-index: 50;
+  pointer-events: none;
+}
