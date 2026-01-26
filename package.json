@@ -9,9 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@auth0/nextjs-auth0": "^4.14.0",
     "@neondatabase/serverless": "^1.0.2",
-    "@supabase/supabase-js": "^2.91.1",
+    "@supabase/supabase-js": "2.92.1-rc.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.29.0",
