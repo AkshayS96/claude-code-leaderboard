@@ -14,10 +14,7 @@ export default function LoginPage() {
         try {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'x',
-                options: {
-                    redirectTo: `${window.location.origin}/auth/callback`,
-                    scopes: 'users.read'
-                },
+                options: {},
             });
 
             if (error) {
