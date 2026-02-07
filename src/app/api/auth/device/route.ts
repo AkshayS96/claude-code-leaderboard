@@ -6,73 +6,104 @@ import crypto from 'crypto';
 
 // POST: Generate a new device code (Public)
 export async function POST() {
-    const code = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 chars
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
+    try {
+        const code = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 chars
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
 
-    const { error } = await supabase
-        .from('device_codes')
-        .insert({ code, expires_at: expiresAt });
+        console.log('Creating device code:', code);
 
-    if (error) {
-        return NextResponse.json({ error: 'Failed to generate code' }, { status: 500 });
+        const { error } = await supabase
+            .from('device_codes')
+            .insert({ code, expires_at: expiresAt });
+
+        if (error) {
+            console.error('Device code DB error:', error);
+            return NextResponse.json({ error: 'Failed to generate code: ' + error.message }, { status: 500 });
+        }
+
+        return NextResponse.json({
+            device_code: code,
+            verification_uri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/device`,
+            expires_in: 600,
+            interval: 5
+        });
+    } catch (e: any) {
+        console.error('Device code error:', e);
+        return NextResponse.json({ error: e.message }, { status: 500 });
     }
-
-    return NextResponse.json({
-        device_code: code,
-        verification_uri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/device`,
-        expires_in: 600,
-        interval: 5
-    });
 }
 
 // PUT: Verify a device code (Authenticated)
 export async function PUT(req: NextRequest) {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return NextResponse.json({ error: 'Missing token' }, { status: 401 });
-    const token = authHeader.replace('Bearer ', '');
+    try {
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) return NextResponse.json({ error: 'Missing token' }, { status: 401 });
+        const token = authHeader.replace('Bearer ', '');
 
-    const client = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
+        const client = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            { global: { headers: { Authorization: `Bearer ${token}` } } }
+        );
 
-    const { data: { user }, error: authError } = await client.auth.getUser();
-    if (authError || !user) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+        const { data: { user }, error: authError } = await client.auth.getUser();
+        if (authError || !user) {
+            console.error('Auth error:', authError);
+            return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+        }
 
-    const { code } = await req.json();
-    if (!code) return NextResponse.json({ error: 'Code required' }, { status: 400 });
+        const body = await req.json();
+        const code = body?.code;
+        if (!code) return NextResponse.json({ error: 'Code required' }, { status: 400 });
 
-    // Generate NEW API Key for the user (Resetting old one)
-    const apiKey = 'sk_claude_' + crypto.randomBytes(16).toString('hex');
-    const apiKeyHash = await hashApiKey(apiKey);
+        console.log('Verifying device code:', code, 'for user:', user.id);
 
-    // Update Leaderboard first
-    const { error: lbError } = await client
-        .from('profiles')
-        .update({ api_key_hash: apiKeyHash })
-        .eq('id', user.id);
+        // Generate NEW API Key for the user (Resetting old one)
+        const apiKey = 'sk_airank_' + crypto.randomBytes(16).toString('hex');
+        const apiKeyHash = await hashApiKey(apiKey);
 
-    if (lbError) {
-        console.error('LB Error', lbError);
-        return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
+        // Get twitter handle from user metadata
+        const twitterHandle = user.user_metadata?.preferred_username ||
+            user.user_metadata?.user_name ||
+            user.email?.split('@')[0];
+
+        // Upsert profile (create if doesn't exist, update if it does)
+        const { error: lbError } = await client
+            .from('profiles')
+            .upsert({
+                id: user.id,
+                twitter_handle: twitterHandle,
+                api_key_hash: apiKeyHash,
+                avatar_url: user.user_metadata?.avatar_url,
+                last_active: new Date().toISOString()
+            }, { onConflict: 'id' });
+
+        if (lbError) {
+            console.error('Profile upsert error:', lbError);
+            return NextResponse.json({ error: 'Failed to update profile: ' + lbError.message }, { status: 500 });
+        }
+
+        // Update Device Code
+        const { error: dcError } = await client
+            .from('device_codes')
+            .update({
+                verified: true,
+                user_id: user.id,
+                temp_api_key: apiKey
+            })
+            .eq('code', code);
+
+        if (dcError) {
+            console.error('Device code update error:', dcError);
+            return NextResponse.json({ error: 'Failed to verify code: ' + dcError.message }, { status: 500 });
+        }
+
+        console.log('Device verified successfully for:', twitterHandle);
+        return NextResponse.json({ success: true });
+    } catch (e: any) {
+        console.error('PUT device error:', e);
+        return NextResponse.json({ error: e.message }, { status: 500 });
     }
-
-    // Update Device Code
-    const { error: dcError } = await client
-        .from('device_codes')
-        .update({
-            verified: true,
-            user_id: user.id,
-            temp_api_key: apiKey
-        })
-        .eq('code', code);
-
-    if (dcError) {
-        return NextResponse.json({ error: 'Failed to verify code' }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true });
 }
 
 // GET: Poll for status (Public)

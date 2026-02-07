@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS profiles (
     avatar_url TEXT,
     input_tokens BIGINT DEFAULT 0,
     output_tokens BIGINT DEFAULT 0,
-    cache_tokens BIGINT DEFAULT 0,
-    total_tokens BIGINT GENERATED ALWAYS AS (input_tokens + output_tokens + cache_tokens) STORED,
+    cache_read_tokens BIGINT DEFAULT 0,
+    cache_write_tokens BIGINT DEFAULT 0,
+    total_tokens BIGINT GENERATED ALWAYS AS (input_tokens + output_tokens) STORED, -- For ranking: actual API work
     last_active TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -21,8 +22,9 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   user_id UUID REFERENCES profiles(id),
   twitter_handle TEXT,
   token_count INT,
-  metric_type TEXT, -- 'input', 'output', 'cache_read'
+  metric_type TEXT, -- 'input', 'output', 'cache_read', 'aggregate'
   timestamp TIMESTAMPTZ DEFAULT NOW(),
+  hour_bucket TIMESTAMPTZ, -- For hourly aggregation (truncated to hour)
   meta JSONB DEFAULT '{}'::jsonb
 );
 
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS device_codes (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_profiles_total_tokens ON profiles (total_tokens DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_date ON usage_logs (user_id, timestamp);
+-- Unique constraint for hourly aggregation (uses hour_bucket column, not date_trunc)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_logs_user_hour_bucket ON usage_logs (user_id, hour_bucket) WHERE metric_type = 'aggregate';
 
 -- RLS Policies
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -97,7 +101,8 @@ CREATE OR REPLACE FUNCTION increment_tokens(
   target_user_id UUID, 
   inc_input BIGINT, 
   inc_output BIGINT, 
-  inc_cache BIGINT
+  inc_cache_read BIGINT,
+  inc_cache_write BIGINT
 )
 RETURNS VOID AS $$
 BEGIN
@@ -105,7 +110,8 @@ BEGIN
   SET 
     input_tokens = input_tokens + inc_input,
     output_tokens = output_tokens + inc_output,
-    cache_tokens = cache_tokens + inc_cache,
+    cache_read_tokens = cache_read_tokens + inc_cache_read,
+    cache_write_tokens = cache_write_tokens + inc_cache_write,
     last_active = NOW()
   WHERE id = target_user_id;
 END;

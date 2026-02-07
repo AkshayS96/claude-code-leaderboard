@@ -2,8 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
-
-const CONFIG_PATH = path.join(os.homedir(), '.claude-rank.json');
+import { urls, CONFIG_PATH } from '../config';
 
 export async function setupCommand() {
     if (!fs.existsSync(CONFIG_PATH)) {
@@ -27,12 +26,17 @@ export async function setupCommand() {
         return;
     }
 
+    // Based on https://code.claude.com/docs/en/monitoring-usage
     const vars = [
+        `# AI Rank Telemetry Configuration`,
         `export CLAUDE_CODE_ENABLE_TELEMETRY=1`,
-        `export OTEL_EXPORTER_OTLP_ENDPOINT="${config.api_url}/v1/metrics"`, // Use correct metrics endpoint
-        // Note: OTel standard is headers for auth usually, but resource attributes works if collector supports it.
-        // Our backend looks at Resource Attributes.
-        `export OTEL_RESOURCE_ATTRIBUTES="twitter_handle=@${config.twitter_handle.replace('@', '')},cr_api_key=${config.api_key}"`
+        `export OTEL_METRICS_EXPORTER=otlp`,
+        `export OTEL_LOGS_EXPORTER=otlp`,
+        `export OTEL_EXPORTER_OTLP_PROTOCOL=http/json`,
+        `export OTEL_EXPORTER_OTLP_ENDPOINT="${urls.OTEL}"`,
+        `export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${config.api_key},X-Twitter-Handle=${config.twitter_handle}"`,
+        `export OTEL_METRIC_EXPORT_INTERVAL=10000`,
+        `export OTEL_RESOURCE_ATTRIBUTES="twitter_handle=${config.twitter_handle}"`
     ].join('\n');
 
     try {
@@ -41,14 +45,28 @@ export async function setupCommand() {
         // Check if already exists to avoid duplication
         const currentContent = fs.existsSync(rcFile) ? fs.readFileSync(rcFile, 'utf-8') : '';
         if (currentContent.includes('CLAUDE_CODE_ENABLE_TELEMETRY')) {
-            console.log(chalk.yellow('Configuration seems to already exist in file. Skipping append.'));
-            printVars(config);
-            return;
+            console.log(chalk.yellow('Configuration already exists. Replacing with new config...'));
+            // Remove old config block
+            const newContent = currentContent
+                .replace(/# AI Rank Telemetry Configuration[\s\S]*?export OTEL_RESOURCE_ATTRIBUTES=.*\n?/g, '')
+                .replace(/export CLAUDE_CODE_ENABLE_TELEMETRY=.*\n?/g, '')
+                .replace(/export OTEL_EXPORTER_OTLP_ENDPOINT=.*\n?/g, '')
+                .replace(/export OTEL_RESOURCE_ATTRIBUTES=.*\n?/g, '')
+                .replace(/export OTEL_METRICS_EXPORTER=.*\n?/g, '')
+                .replace(/export OTEL_LOGS_EXPORTER=.*\n?/g, '')
+                .replace(/export OTEL_EXPORTER_OTLP_PROTOCOL=.*\n?/g, '')
+                .replace(/export OTEL_EXPORTER_OTLP_HEADERS=.*\n?/g, '')
+                .replace(/export OTEL_METRIC_EXPORT_INTERVAL=.*\n?/g, '');
+            fs.writeFileSync(rcFile, newContent + `\n${vars}\n`);
+        } else {
+            fs.appendFileSync(rcFile, `\n${vars}\n`);
         }
 
-        fs.appendFileSync(rcFile, `\n${vars}\n`);
-        console.log(chalk.green(`\nSuccessfully appended environment variables to ${rcFile}`));
-        console.log(chalk.cyan('Please restart your terminal or run: source ' + rcFile));
+        console.log(chalk.green(`\n✓ Successfully configured environment variables in ${rcFile}`));
+        console.log(chalk.cyan('\nPlease restart your terminal or run:'));
+        console.log(chalk.white(`  source ${rcFile}`));
+        console.log(chalk.cyan('\nThen run Claude Code to start tracking:'));
+        console.log(chalk.white('  claude'));
 
     } catch (error: any) {
         console.error(chalk.red(`Failed to write to file: ${error.message}`));
@@ -58,7 +76,13 @@ export async function setupCommand() {
 
 function printVars(config: any) {
     console.log('\nAdd these lines to your shell config manually:\n');
+    console.log(chalk.gray('# AI Rank Telemetry Configuration'));
     console.log(`export CLAUDE_CODE_ENABLE_TELEMETRY=1`);
-    console.log(`export OTEL_EXPORTER_OTLP_ENDPOINT="${config.api_url}/v1/metrics"`);
-    console.log(`export OTEL_RESOURCE_ATTRIBUTES="twitter_handle=${config.twitter_handle},api_key=${config.api_key}"`);
+    console.log(`export OTEL_METRICS_EXPORTER=otlp`);
+    console.log(`export OTEL_LOGS_EXPORTER=otlp`);
+    console.log(`export OTEL_EXPORTER_OTLP_PROTOCOL=http/json`);
+    console.log(`export OTEL_EXPORTER_OTLP_ENDPOINT="${urls.OTEL}"`);
+    console.log(`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${config.api_key},X-Twitter-Handle=${config.twitter_handle}"`);
+    console.log(`export OTEL_METRIC_EXPORT_INTERVAL=10000`);
+    console.log(`export OTEL_RESOURCE_ATTRIBUTES="twitter_handle=${config.twitter_handle}"`);
 }

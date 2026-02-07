@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     let apiKey = null;
 
     if (!existing) {
-        const rawKey = 'sk_claude_' + crypto.randomBytes(16).toString('hex');
+        const rawKey = 'sk_airank_' + crypto.randomBytes(16).toString('hex');
         const hash = await hashApiKey(rawKey);
 
         const { error: insertError } = await client.from('profiles').insert({

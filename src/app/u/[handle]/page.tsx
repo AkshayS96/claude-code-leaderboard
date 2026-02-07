@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatCompactNumber } from '@/lib/utils';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Lock } from 'lucide-react';
 import { FloatingCode } from '@/components/FloatingCode';
+import type { User } from '@supabase/supabase-js';
 
 export default function UserProfilePage() {
     const params = useParams();
@@ -15,12 +16,43 @@ export default function UserProfilePage() {
 
     const [profile, setProfile] = useState<any>(null);
     const [chartData, setChartData] = useState<any[]>([]);
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [isOwner, setIsOwner] = useState(false);
+
+    // Check authentication
+    useEffect(() => {
+        const checkAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            setCurrentUser(session?.user ?? null);
+            setAuthLoading(false);
+        };
+
+        checkAuth();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setCurrentUser(session?.user ?? null);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     useEffect(() => {
-        if (!handle) return;
+        if (!handle || authLoading) return;
 
         const fetchData = async () => {
             const decodedHandle = decodeURIComponent(handle);
+
+            // Check if current user is the profile owner
+            const currentUserHandle = currentUser?.user_metadata?.preferred_username ||
+                currentUser?.user_metadata?.user_name;
+
+            if (currentUserHandle?.toLowerCase() !== decodedHandle.toLowerCase()) {
+                setIsOwner(false);
+                return; // Don't fetch data if not owner
+            }
+
+            setIsOwner(true);
 
             // Fetch Profile
             const { data } = await supabase
@@ -34,17 +66,24 @@ export default function UserProfilePage() {
             if (data) {
                 const { data: logs } = await supabase
                     .from('usage_logs')
-                    .select('timestamp, token_count, meta')
+                    .select('hour_bucket, token_count, meta')
                     .eq('user_id', data.id)
-                    .order('timestamp', { ascending: true })
-                    .limit(50);
+                    .eq('metric_type', 'aggregate')
+                    .order('hour_bucket', { ascending: true })
+                    .limit(48); // Last 48 hours
 
                 if (logs) {
                     const mapped = logs.map(l => ({
-                        time: new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        tokens: l.token_count,
+                        time: new Date(l.hour_bucket).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit'
+                        }),
                         input: l.meta?.input || 0,
-                        output: l.meta?.output || 0
+                        output: l.meta?.output || 0,
+                        cache_read: l.meta?.cache_read || 0,
+                        cache_write: l.meta?.cache_write || 0,
+                        total: l.token_count || 0
                     }));
                     setChartData(mapped);
                 }
@@ -52,9 +91,53 @@ export default function UserProfilePage() {
         };
 
         fetchData();
-    }, [handle]);
+    }, [handle, currentUser, authLoading]);
 
-    if (!profile) return <div className="min-h-screen bg-[#faf9f6] text-zinc-500 p-8 font-mono">Loading profile data...</div>;
+    // Loading state
+    if (authLoading) {
+        return <div className="min-h-screen bg-[#faf9f6] text-zinc-500 p-8 font-mono">Checking access...</div>;
+    }
+
+    // Not logged in
+    if (!currentUser) {
+        return (
+            <main className="min-h-screen bg-[#faf9f6] grid place-items-center p-8 font-mono relative">
+                <FloatingCode side="left" />
+                <FloatingCode side="right" />
+                <div className="bg-white border border-zinc-200 rounded-xl p-8 shadow-sm text-center max-w-md relative z-10">
+                    <Lock className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
+                    <h1 className="text-2xl font-bold text-zinc-900 mb-2">Login Required</h1>
+                    <p className="text-zinc-500 mb-6">Please sign in to view your dashboard.</p>
+                    <Link href="/auth/login" className="px-6 py-3 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg transition-all font-medium inline-block">
+                        Sign In
+                    </Link>
+                </div>
+            </main>
+        );
+    }
+
+    // Not the owner
+    if (!isOwner) {
+        return (
+            <main className="min-h-screen bg-[#faf9f6] grid place-items-center p-8 font-mono relative">
+                <FloatingCode side="left" />
+                <FloatingCode side="right" />
+                <div className="bg-white border border-zinc-200 rounded-xl p-8 shadow-sm text-center max-w-md relative z-10">
+                    <Lock className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
+                    <h1 className="text-2xl font-bold text-zinc-900 mb-2">Access Denied</h1>
+                    <p className="text-zinc-500 mb-6">You can only view your own dashboard.</p>
+                    <Link href="/" className="px-6 py-3 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg transition-all font-medium inline-block">
+                        Back to Leaderboard
+                    </Link>
+                </div>
+            </main>
+        );
+    }
+
+    // Loading profile data
+    if (!profile) {
+        return <div className="min-h-screen bg-[#faf9f6] text-zinc-500 p-8 font-mono">Loading profile data...</div>;
+    }
 
     return (
         <main className="min-h-screen bg-[#faf9f6] text-zinc-800 font-mono p-4 md:p-8 relative selection:bg-[#EB5B39] selection:text-white">
@@ -76,36 +159,123 @@ export default function UserProfilePage() {
                     </div>
                     <div className="text-center md:text-left">
                         <h1 className="text-4xl font-bold text-zinc-900 mb-2">@{profile.twitter_handle}</h1>
-                        <div className="flex gap-8 text-sm text-zinc-500 uppercase tracking-widest font-medium">
-                            <div>
-                                <span className="block text-[#EB5B39] font-bold text-2xl mb-1">{formatCompactNumber(profile.total_tokens)}</span>
-                                Total Tokens
-                            </div>
-                            <div>
-                                <span className="block text-[#EB5B39] font-bold text-2xl mb-1">{formatCompactNumber(profile.cache_tokens)}</span>
-                                Cache Hits
-                            </div>
-                        </div>
+                        <p className="text-zinc-500 text-sm">Dashboard &bull; Last active {new Date(profile.last_active).toLocaleDateString()}</p>
                     </div>
                 </header>
 
-                <div className="bg-white border border-zinc-200 rounded-xl p-8 shadow-sm">
-                    <h3 className="text-xs uppercase tracking-widest text-zinc-400 mb-8 font-bold">Activity (Last 50 Events)</h3>
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData}>
-                                <XAxis dataKey="time" stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#a1a1aa" fontSize={10} tickLine={false} axisLine={false} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#fff', borderColor: '#e4e4e7', color: '#18181b', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                    itemStyle={{ color: '#18181b' }}
-                                    cursor={{ fill: '#f4f4f5' }}
-                                />
-                                <Bar dataKey="input" stackId="a" fill="#ea580c" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="output" stackId="a" fill="#fdba74" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                {/* Stats Table */}
+                <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm mb-8">
+                    <h3 className="text-xs uppercase tracking-widest text-zinc-400 mb-6 font-bold">Token Statistics</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100">
+                            <span className="block text-[#EB5B39] font-bold text-2xl mb-1">{formatCompactNumber(profile.total_tokens || 0)}</span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Total (Rank)</span>
+                        </div>
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100">
+                            <span className="block text-orange-600 font-bold text-2xl mb-1">{formatCompactNumber(profile.input_tokens || 0)}</span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Input</span>
+                        </div>
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100">
+                            <span className="block text-orange-400 font-bold text-2xl mb-1">{formatCompactNumber(profile.output_tokens || 0)}</span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Output</span>
+                        </div>
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100">
+                            <span className="block text-emerald-600 font-bold text-2xl mb-1">{formatCompactNumber(profile.cache_read_tokens || 0)}</span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Cache Read</span>
+                        </div>
                     </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100">
+                            <span className="block text-blue-600 font-bold text-2xl mb-1">{formatCompactNumber(profile.cache_write_tokens || 0)}</span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Cache Write</span>
+                        </div>
+                        <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-100 col-span-1 md:col-span-3">
+                            <span className="block text-zinc-700 font-bold text-2xl mb-1">
+                                {profile.input_tokens + profile.cache_read_tokens > 0
+                                    ? Math.round((profile.cache_read_tokens / (profile.input_tokens + profile.cache_read_tokens)) * 100)
+                                    : 0}%
+                            </span>
+                            <span className="text-xs uppercase tracking-widest text-zinc-500 font-medium">Cache Efficiency</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Line Chart */}
+                <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm">
+                    <h3 className="text-xs uppercase tracking-widest text-zinc-400 mb-6 font-bold">Hourly Token Usage (Last 48h)</h3>
+                    {chartData.length === 0 ? (
+                        <div className="h-64 flex items-center justify-center text-zinc-400">
+                            No usage data yet. Start using Claude Code to see your stats!
+                        </div>
+                    ) : (
+                        <div className="h-80 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData}>
+                                    <XAxis
+                                        dataKey="time"
+                                        stroke="#a1a1aa"
+                                        fontSize={10}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        interval="preserveStartEnd"
+                                    />
+                                    <YAxis
+                                        stroke="#a1a1aa"
+                                        fontSize={10}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickFormatter={(value) => formatCompactNumber(value)}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#fff',
+                                            borderColor: '#e4e4e7',
+                                            color: '#18181b',
+                                            borderRadius: '8px',
+                                            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+                                        }}
+                                        formatter={(value: number | undefined) => {
+                                            if (value === undefined) return '0';
+                                            return formatCompactNumber(value);
+                                        }}
+                                    />
+                                    <Legend />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="input"
+                                        name="Input"
+                                        stroke="#ea580c"
+                                        strokeWidth={2}
+                                        dot={false}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="output"
+                                        name="Output"
+                                        stroke="#fdba74"
+                                        strokeWidth={2}
+                                        dot={false}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="cache_read"
+                                        name="Cache Read"
+                                        stroke="#10b981"
+                                        strokeWidth={2}
+                                        dot={false}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="cache_write"
+                                        name="Cache Write"
+                                        stroke="#3b82f6"
+                                        strokeWidth={2}
+                                        dot={false}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
                 </div>
             </div>
         </main>

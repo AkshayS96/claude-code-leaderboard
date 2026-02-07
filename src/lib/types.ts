@@ -4,8 +4,9 @@ export interface LeaderboardUser {
     // api_key_hash is not exposed to frontend
     input_tokens: number;
     output_tokens: number;
-    cache_tokens: number;
-    total_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+    total_tokens: number; // input + output (for ranking)
     last_active: string;
     created_at: string;
     savings_score?: number; // Calculated field

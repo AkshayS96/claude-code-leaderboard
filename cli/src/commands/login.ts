@@ -2,12 +2,7 @@ import fetch from 'node-fetch';
 import open from 'open';
 import chalk from 'chalk';
 import fs from 'fs';
-import path from 'path';
-import os from 'os';
-
-const CONFIG_PATH = path.join(os.homedir(), '.claude-rank.json');
-// Default to localhost for dev, but configurable
-const API_URL = process.env.CLAUDE_RANK_API || 'http://localhost:3000/api';
+import { API_BASE_URL, urls, CONFIG_PATH } from '../config';
 
 interface DeviceCodeResponse {
     device_code: string;
@@ -29,7 +24,7 @@ export async function loginCommand() {
 
     try {
         // 1. Request Code
-        const res = await fetch(`${API_URL}/auth/device`, {
+        const res = await fetch(urls.AUTH_DEVICE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -63,31 +58,26 @@ export async function loginCommand() {
             await new Promise(r => setTimeout(r, pollInterval));
             process.stdout.write('.');
 
-            const pollRes = await fetch(`${API_URL}/auth/device?code=${device_code}`);
+            const pollRes = await fetch(`${urls.AUTH_DEVICE}?code=${device_code}`);
 
             if (pollRes.status === 404) {
-                // Code invalid or expired
                 throw new Error('Device code expired or invalid.');
             }
 
             const pollData = await pollRes.json() as PollResponse;
 
             if (pollData.error) {
-                // Should we abort?
-                // If it's "pending", backend shouldn't return error but maybe just status pending.
-                // My backend returns status: pending normally.
-                // If explicit error, abort.
                 throw new Error(pollData.error);
             }
 
             if (pollData.status === 'complete' && pollData.api_key) {
                 console.log(chalk.green('\n Success!'));
 
-                // 3. Save Creds
+                // 3. Save Creds - store api_url for backwards compatibility
                 const config = {
                     twitter_handle: pollData.twitter_handle,
                     api_key: pollData.api_key,
-                    api_url: API_URL
+                    api_url: `${API_BASE_URL}/api`
                 };
 
                 fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
@@ -97,7 +87,6 @@ export async function loginCommand() {
                 console.log(chalk.cyan('\nNext step: Run `claude-rank setup` to configure your shell.'));
                 break;
             }
-            // If status is pending, continue loop
         }
 
     } catch (e: any) {

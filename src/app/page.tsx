@@ -7,6 +7,7 @@ import { Terminal, Cpu, Zap, Activity } from 'lucide-react';
 import { formatCompactNumber } from '@/lib/utils';
 import Link from 'next/link';
 import { FloatingCode } from '@/components/FloatingCode';
+import type { User } from '@supabase/supabase-js';
 
 interface Profile {
   id: string;
@@ -15,14 +16,38 @@ interface Profile {
   total_tokens: number;
   input_tokens: number;
   output_tokens: number;
-  cache_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
   last_active: string;
 }
 
 export default function LeaderboardPage() {
+  console.log('LeaderboardPage rendering');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [stats, setStats] = useState({ peak_throughput: 0 });
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Check authentication state
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      console.log('Auth check - Session:', session, 'Error:', error);
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    };
+
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('Auth state changed:', _event, 'User:', session?.user?.email);
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const fetchLeaderboard = async () => {
     try {
@@ -75,12 +100,33 @@ export default function LeaderboardPage() {
           </p>
 
           <div className="mt-8 flex gap-4">
-            <Link href="/auth/login" className="px-6 py-3 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg transition-all font-medium shadow-xl shadow-zinc-200">
-              Join Network
+            {authLoading ? (
+              <div className="px-6 py-3 bg-zinc-200 text-zinc-400 rounded-lg font-medium shadow-xl shadow-zinc-200 animate-pulse">
+                Loading...
+              </div>
+            ) : user ? (
+              <>
+                <Link href={`/u/${user.user_metadata?.preferred_username || user.user_metadata?.user_name}`} className="px-6 py-3 bg-[#EB5B39] text-white hover:bg-[#d94e2f] rounded-lg transition-all font-medium shadow-xl shadow-orange-200">
+                  Dashboard
+                </Link>
+                <button
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    window.location.reload();
+                  }}
+                  className="px-6 py-3 border border-zinc-200 bg-white text-zinc-600 hover:text-red-600 hover:border-red-200 rounded-lg transition-all font-medium"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <Link href="/auth/login" className="px-6 py-3 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg transition-all font-medium shadow-xl shadow-zinc-200">
+                Join Network
+              </Link>
+            )}
+            <Link href="/setup" className="px-6 py-3 border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 hover:border-zinc-300 rounded-lg transition-all font-medium">
+              How to Setup
             </Link>
-            <a href="https://docs.anthropic.com" className="px-6 py-3 border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 hover:border-zinc-300 rounded-lg transition-all font-medium">
-              Documentation
-            </a>
           </div>
         </header>
 
@@ -93,7 +139,7 @@ export default function LeaderboardPage() {
         <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
           <div className="grid grid-cols-12 gap-4 p-5 bg-zinc-50 border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-400 font-bold">
             <div className="col-span-1">#</div>
-            <div className="col-span-4 pl-2">User</div>
+            <div className="col-span-4 pl-2">X Account</div>
             <div className="col-span-3 text-right">Tokens</div>
             <div className="col-span-2 text-right hidden md:block">Eff.</div>
             <div className="col-span-2 text-right hidden md:block">Cache</div>
@@ -121,20 +167,20 @@ export default function LeaderboardPage() {
                           <span className="text-zinc-400 font-bold">{profile.twitter_handle?.slice(0, 1)}</span>
                         )}
                       </div>
-                      <Link href={`/u/${profile.twitter_handle}`} className="font-medium text-zinc-900 group-hover:text-[#EB5B39] transition-colors">
+                      <a href={`https://x.com/${profile.twitter_handle}`} target="_blank" rel="noopener noreferrer" className="font-medium text-zinc-900 group-hover:text-[#EB5B39] transition-colors">
                         @{profile.twitter_handle}
-                      </Link>
+                      </a>
                     </div>
                     <div className="col-span-3 text-right font-bold text-zinc-900 font-mono text-lg">
                       {formatCompactNumber(profile.total_tokens || 0)}
                     </div>
                     <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
-                      {profile.total_tokens > 0
-                        ? Math.round((profile.cache_tokens / profile.total_tokens) * 100)
+                      {(profile.input_tokens + profile.cache_read_tokens) > 0
+                        ? Math.round((profile.cache_read_tokens / (profile.input_tokens + profile.cache_read_tokens)) * 100)
                         : 0}%
                     </div>
                     <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
-                      {formatCompactNumber(profile.cache_tokens || 0)}
+                      {formatCompactNumber(profile.cache_read_tokens || 0)}
                     </div>
                   </motion.div>
                 ))}
@@ -142,6 +188,15 @@ export default function LeaderboardPage() {
             )}
           </div>
         </div>
+
+        {/* Footer */}
+        <footer className="mt-12 pt-8 border-t border-zinc-200 text-center text-sm text-zinc-400">
+          <div className="flex justify-center gap-6">
+            <Link href="/terms" className="hover:text-zinc-600 transition-colors">Terms of Service</Link>
+            <Link href="/privacy" className="hover:text-zinc-600 transition-colors">Privacy Policy</Link>
+          </div>
+          <p className="mt-4 text-xs">This is a community project and is not affiliated with or endorsed by any AI company.</p>
+        </footer>
       </div>
     </main>
   );

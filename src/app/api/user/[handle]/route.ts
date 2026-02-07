@@ -7,7 +7,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<any> }
 
     try {
         const { rows } = await db.query(
-            `SELECT id, twitter_handle, input_tokens, output_tokens, cache_tokens, last_active, created_at FROM profiles WHERE twitter_handle = $1`,
+            `SELECT id, twitter_handle, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens, last_active, created_at FROM profiles WHERE twitter_handle = $1`,
             [handle]
         );
 
@@ -18,10 +18,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<any> }
         const user = rows[0];
         const input = Number(user.input_tokens);
         const output = Number(user.output_tokens);
-        const cache = Number(user.cache_tokens);
-        const total = input + output + cache;
-        const totalInput = input + cache;
-        const savingsScore = totalInput > 0 ? (cache / totalInput) * 100 : 0;
+        const cacheRead = Number(user.cache_read_tokens);
+        const cacheWrite = Number(user.cache_write_tokens);
+        const total = Number(user.total_tokens); // input + output (for ranking)
+        const totalInput = input + cacheRead; // Tokens that could be input
+        const savingsScore = totalInput > 0 ? (cacheRead / totalInput) * 100 : 0;
 
         // Get Rank: Count users with more tokens
         const result = await db.query(
@@ -34,7 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<any> }
             ...user,
             input_tokens: input,
             output_tokens: output,
-            cache_tokens: cache,
+            cache_read_tokens: cacheRead,
+            cache_write_tokens: cacheWrite,
             total_tokens: total,
             savings_score: savingsScore,
             rank: rankAbove + 1

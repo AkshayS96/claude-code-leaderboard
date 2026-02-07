@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
         const { handle } = await req.json();
         if (!handle) return NextResponse.json({ error: 'Handle required' }, { status: 400 });
 
-        // Generate a new key starting with sk_claude_
-        const apiKey = 'sk_claude_' + crypto.randomBytes(16).toString('hex');
+        // Generate a new key starting with sk_airank_
+        const apiKey = 'sk_airank_' + crypto.randomBytes(16).toString('hex');
         const apiKeyHash = await hashApiKey(apiKey);
 
         // Store in DB

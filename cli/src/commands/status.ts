@@ -1,12 +1,9 @@
 import fetch from 'node-fetch';
 import chalk from 'chalk';
 import fs from 'fs';
-import path from 'path';
-import os from 'os';
 // @ts-ignore
 import Table from 'cli-table3';
-
-const CONFIG_PATH = path.join(os.homedir(), '.claude-rank.json');
+import { urls, CONFIG_PATH } from '../config';
 
 export async function statusCommand() {
     if (!fs.existsSync(CONFIG_PATH)) {
@@ -17,7 +14,7 @@ export async function statusCommand() {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
 
     try {
-        const res = await fetch(`${config.api_url}/user/${config.twitter_handle}`);
+        const res = await fetch(urls.USER(config.twitter_handle));
         if (!res.ok) throw new Error('Failed to fetch stats');
 
         const user = await res.json() as any;
@@ -31,12 +28,14 @@ export async function statusCommand() {
             ['Global Rank', chalk.bold.yellow(`#${user.rank || '?'}`)],
             ['Twitter Handle', chalk.bold.white(`@${user.twitter_handle}`)],
             ['Total Tokens', chalk.green(user.total_tokens.toLocaleString())],
-            ['Savings Score', chalk.blue(`${user.savings_score?.toFixed(1)}%`)],
-            ['Cache Read', user.cache_tokens.toLocaleString()],
-            ['Output Gen', user.output_tokens.toLocaleString()]
+            ['Input Tokens', user.input_tokens.toLocaleString()],
+            ['Output Tokens', user.output_tokens.toLocaleString()],
+            ['Cache Read', user.cache_read_tokens?.toLocaleString() || '0'],
+            ['Cache Write', user.cache_write_tokens?.toLocaleString() || '0'],
+            ['Savings Score', chalk.blue(`${user.savings_score?.toFixed(1)}%`)]
         );
 
-        console.log(chalk.bold(`\n  CLAUDE RANK STATUS`));
+        console.log(chalk.bold(`\n  AI RANK STATUS`));
         console.log(table.toString());
 
     } catch (error: any) {
