@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
-import { Terminal, Cpu, Zap, Activity } from 'lucide-react';
+import { Terminal, Cpu, Zap, Activity, BarChart3, TrendingUp } from 'lucide-react';
 import { formatCompactNumber } from '@/lib/utils';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import Link from 'next/link';
 import { FloatingCode } from '@/components/FloatingCode';
 import type { User } from '@supabase/supabase-js';
@@ -21,10 +22,17 @@ interface Profile {
   last_active: string;
 }
 
+interface Stats {
+  peak_throughput: number;
+  last_24h_tokens?: number;
+  active_users_24h?: number;
+  graph_data?: any[];
+}
+
 export default function LeaderboardPage() {
   console.log('LeaderboardPage rendering');
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [stats, setStats] = useState({ peak_throughput: 0 });
+  const [stats, setStats] = useState<Stats>({ peak_throughput: 0 });
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -130,11 +138,53 @@ export default function LeaderboardPage() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          <StatCard label="Active Nodes" value={profiles.length.toString()} icon={<Cpu />} />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <StatCard label="Active Nodes (24h)" value={formatCompactNumber(stats.active_users_24h || profiles.length)} icon={<Cpu />} />
+          <StatCard label="24h Volume" value={formatCompactNumber(stats.last_24h_tokens || 0)} icon={<TrendingUp />} />
           <StatCard label="Peak T/s" value={formatCompactNumber(stats.peak_throughput)} icon={<Zap />} />
           <StatCard label="System Status" value="ONLINE" icon={<Activity />} />
         </div>
+
+        {/* Activity Graph */}
+        {stats.graph_data && stats.graph_data.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-zinc-200 p-6 mb-12">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xs uppercase tracking-widest text-zinc-400 font-bold flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" /> Network Activity (Last 12h)
+              </h3>
+              <span className="text-xs text-zinc-400 font-mono">
+                Since {new Date(stats.graph_data[0].time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.graph_data}>
+                  <defs>
+                    <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#EB5B39" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="#EB5B39" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#fff', borderColor: '#e4e4e7', color: '#18181b', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                    itemStyle={{ color: '#ea580c' }}
+                    labelStyle={{ color: '#71717a', marginBottom: '0.25rem', fontSize: '12px' }}
+                    formatter={(value: number | undefined) => [formatCompactNumber(value || 0), 'Tokens']}
+                    labelFormatter={(label) => new Date(label).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="tokens"
+                    stroke="#EB5B39"
+                    fillOpacity={1}
+                    fill="url(#colorTokens)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-sm border border-zinc-200 overflow-hidden">
           <div className="grid grid-cols-12 gap-4 p-5 bg-zinc-50 border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-400 font-bold">

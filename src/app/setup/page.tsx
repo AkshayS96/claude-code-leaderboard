@@ -63,13 +63,13 @@ export default function SetupPage() {
                     <section className="bg-white rounded-xl border border-zinc-200 p-6 shadow-sm">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-8 h-8 bg-orange-50 text-[#EB5B39] rounded-full flex items-center justify-center font-bold text-sm">1</div>
-                            <h2 className="text-xl font-bold text-zinc-900">Install the CLI</h2>
+                            <h2 className="text-xl font-bold text-zinc-900">Get the CLI</h2>
                         </div>
                         <p className="text-zinc-500 mb-4">
-                            Install the CLI globally using npm:
+                            You can run the CLI directly using npx (no installation required):
                         </p>
-                        <CodeBlock copyText="npm install -g @anthropic-ai/claude-code">
-                            <span className="text-zinc-400">$</span> npm install -g @anthropic-ai/claude-code
+                        <CodeBlock copyText="npx crank-cli --help">
+                            <span className="text-zinc-400">$</span> npx crank-cli --help
                         </CodeBlock>
                     </section>
 
@@ -82,8 +82,8 @@ export default function SetupPage() {
                         <p className="text-zinc-500 mb-4">
                             Run the login command and follow the instructions to authenticate with your X (Twitter) account:
                         </p>
-                        <CodeBlock copyText="claude-rank login">
-                            <span className="text-zinc-400">$</span> claude-rank login
+                        <CodeBlock copyText="npx crank-cli login">
+                            <span className="text-zinc-400">$</span> npx crank-cli login
                         </CodeBlock>
                         <p className="text-zinc-400 text-sm mt-3">
                             This will open a browser window where you can authorize the CLI using a device code.
@@ -99,8 +99,8 @@ export default function SetupPage() {
                         <p className="text-zinc-500 mb-4">
                             The CLI will automatically track your token usage when you use AI coding assistants:
                         </p>
-                        <CodeBlock copyText="claude-rank start">
-                            <span className="text-zinc-400">$</span> claude-rank start
+                        <CodeBlock copyText="npx crank-cli setup">
+                            <span className="text-zinc-400">$</span> npx crank-cli setup
                         </CodeBlock>
                         <p className="text-zinc-400 text-sm mt-3">
                             This starts tracking and reports metrics to the leaderboard in real-time.

@@ -43,6 +43,8 @@ CREATE INDEX IF NOT EXISTS idx_profiles_total_tokens ON profiles (total_tokens D
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_date ON usage_logs (user_id, timestamp);
 -- Unique constraint for hourly aggregation (uses hour_bucket column, not date_trunc)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_logs_user_hour_bucket ON usage_logs (user_id, hour_bucket) WHERE metric_type = 'aggregate';
+-- Index for global stats aggregation (e.g. Peak T/s)
+CREATE INDEX IF NOT EXISTS idx_usage_logs_hour_bucket ON usage_logs (hour_bucket);
 
 -- RLS Policies
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
