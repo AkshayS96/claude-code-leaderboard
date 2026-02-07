@@ -8,7 +8,7 @@ import { statusCommand } from './commands/status';
 const program = new Command();
 
 program
-    .name('claude-rank')
+    .name('crank-cli')
     .description('CLI for AI Rank Leaderboard')
     .version('1.0.0');
 

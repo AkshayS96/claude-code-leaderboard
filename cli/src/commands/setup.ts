@@ -6,7 +6,7 @@ import { urls, CONFIG_PATH } from '../config';
 
 export async function setupCommand() {
     if (!fs.existsSync(CONFIG_PATH)) {
-        console.error(chalk.red('Error: You must login first. Run `claude-rank login`'));
+        console.error(chalk.red('Error: You must login first. Run `npx crank-cli login`'));
         process.exit(1);
     }
 

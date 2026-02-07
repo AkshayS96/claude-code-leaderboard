@@ -84,7 +84,7 @@ export async function loginCommand() {
 
                 console.log(chalk.green(`Logged in as @${pollData.twitter_handle}`));
                 console.log(chalk.gray(`Credentials saved to ${CONFIG_PATH}`));
-                console.log(chalk.cyan('\nNext step: Run `claude-rank setup` to configure your shell.'));
+                console.log(chalk.cyan('\nNext step: Run `npx crank-cli setup` to configure your shell.'));
                 break;
             }
         }

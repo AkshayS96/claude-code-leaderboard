@@ -7,17 +7,24 @@ import { urls, CONFIG_PATH } from '../config';
 
 export async function statusCommand() {
     if (!fs.existsSync(CONFIG_PATH)) {
-        console.error(chalk.red('Not logged in. Run `claude-rank login`'));
+        console.error(chalk.red('Not logged in. Run `npx crank-cli login`'));
         process.exit(1);
     }
 
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
 
     try {
+        // AI Animation
+        await animateText('Initializing uplink', 800);
+        await animateText('Verifying neural signature', 800);
+        await animateText('Synchronizing telemetry', 800);
+
         const res = await fetch(urls.USER(config.twitter_handle));
         if (!res.ok) throw new Error('Failed to fetch stats');
 
         const user = await res.json() as any;
+
+        console.log(''); // New line after animation
 
         const table = new Table({
             head: [chalk.cyan('Metric'), chalk.cyan('Value')],
@@ -35,10 +42,22 @@ export async function statusCommand() {
             ['Savings Score', chalk.blue(`${user.savings_score?.toFixed(1)}%`)]
         );
 
-        console.log(chalk.bold(`\n  AI RANK STATUS`));
+        console.log(chalk.bold(`  AI RANK STATUS`));
         console.log(table.toString());
 
     } catch (error: any) {
         console.error(chalk.red(`Error: ${error.message}`));
     }
+}
+
+async function animateText(text: string, duration: number) {
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const interval = 80;
+    const steps = duration / interval;
+
+    for (let i = 0; i < steps; i++) {
+        process.stdout.write(`\r${chalk.cyan(frames[i % frames.length])} ${text}...`);
+        await new Promise(r => setTimeout(r, interval));
+    }
+    process.stdout.write(`\r${chalk.green('✔')} ${text}   \n`);
 }

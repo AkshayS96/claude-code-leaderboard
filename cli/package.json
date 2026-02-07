@@ -1,10 +1,10 @@
 {
-  "name": "claude-rank",
+  "name": "crank-cli",
   "version": "1.0.0",
   "description": "CLI tool for tracking Claude Rank usage on the leaderboard",
   "main": "dist/index.js",
   "bin": {
-    "claude-rank": "dist/index.js"
+    "crank-cli": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
