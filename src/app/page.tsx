@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { Terminal, Cpu, Zap, Activity, BarChart3, TrendingUp } from 'lucide-react';
@@ -37,6 +37,12 @@ export default function LeaderboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loaderRef = useRef<HTMLDivElement>(null);
+
   // Check authentication state
   useEffect(() => {
     const checkAuth = async () => {
@@ -57,35 +63,59 @@ export default function LeaderboardPage() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = async (pageNum = 1) => {
     try {
-      const res = await fetch('/api/leaderboard', { cache: 'no-store' });
+      if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
+
+      const res = await fetch(`/api/leaderboard?page=${pageNum}&limit=50`, { cache: 'no-store' });
       const data = await res.json();
 
-      if (data.users) setProfiles(data.users);
-      if (data.stats) setStats(data.stats);
+      if (pageNum === 1) {
+        if (data.users) setProfiles(data.users);
+        if (data.stats) setStats(data.stats);
+      } else {
+        // Append new profiles
+        if (data.users) {
+          setProfiles(prev => {
+            // Filter out duplicates just in case
+            const newIds = new Set(data.users.map((u: any) => u.id));
+            return [...prev.filter(p => !newIds.has(p.id)), ...data.users];
+          });
+        }
+      }
+
+      if (!data.users || data.users.length < 50) setHasMore(false);
     } catch (e) {
       console.error("Failed to fetch leaderboard", e);
     } finally {
-      setLoading(false);
+      if (pageNum === 1) setLoading(false);
+      else setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    fetchLeaderboard();
-
-    const channel = supabase
-      .channel('leaderboard-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
-        // We can just refetch everything to be safe and get fresh stats if we wanted, 
-        // but stats might not update from postgres changes. 
-        // For now, let's just refetch.
-        fetchLeaderboard();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    fetchLeaderboard(1);
+    // Realtime updates disabled for paginated view to avoid complexity
   }, []);
+
+  // Infinite Scroll Observer
+  useEffect(() => {
+    if (!user) return; // Only for logged in users
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+        setPage(prev => {
+          const nextPage = prev + 1;
+          fetchLeaderboard(nextPage);
+          return nextPage;
+        });
+      }
+    }, { threshold: 0.1 });
+
+    if (loaderRef.current) observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [user, hasMore, loadingMore, loading]);
 
   return (
     <main className="min-h-screen bg-[#faf9f6] text-zinc-800 font-mono p-4 md:p-8 relative selection:bg-[#EB5B39] selection:text-white">
@@ -117,6 +147,19 @@ export default function LeaderboardPage() {
                 <Link href={`/u/${user.user_metadata?.preferred_username || user.user_metadata?.user_name}`} className="px-6 py-3 bg-[#EB5B39] text-white hover:bg-[#d94e2f] rounded-lg transition-all font-medium shadow-xl shadow-orange-200">
                   Dashboard
                 </Link>
+                <button
+                  onClick={() => {
+                    const myProfile = profiles.find(p => p.id === user.id);
+                    if (!myProfile) return;
+                    const rank = profiles.findIndex(p => p.id === user.id) + 1;
+                    const text = `I'm ranked #${rank} on the unofficial Claude Leaderboard ⚡️\n\nTotal Tokens: ${formatCompactNumber(myProfile.total_tokens)}\n\nTrack your stats:`;
+                    const url = 'https://clauderank.vercel.app';
+                    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+                  }}
+                  className="px-6 py-3 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg transition-all font-medium shadow-xl shadow-zinc-200 flex items-center gap-2"
+                >
+                  <TrendingUp className="w-4 h-4" /> Share Rank
+                </button>
                 <button
                   onClick={async () => {
                     await supabase.auth.signOut();
@@ -199,42 +242,81 @@ export default function LeaderboardPage() {
             {loading ? (
               <div className="p-12 text-center text-zinc-400 animate-pulse">Scanning network...</div>
             ) : (
-              <AnimatePresence>
-                {profiles.map((profile, index) => (
-                  <motion.div
-                    key={profile.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="grid grid-cols-12 gap-4 p-5 hover:bg-orange-50/50 transition-colors items-center group"
-                  >
-                    <div className="col-span-1 font-bold text-zinc-300 text-xl group-hover:text-[#EB5B39] transition-colors">{index + 1}</div>
-                    <div className="col-span-4 flex items-center gap-4 pl-2">
-                      <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-200">
-                        {profile.avatar_url ? (
-                          <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-zinc-400 font-bold">{profile.twitter_handle?.slice(0, 1)}</span>
-                        )}
+              <>
+                <AnimatePresence>
+                  {profiles.slice(0, user ? undefined : 10).map((profile, index) => (
+                    <motion.div
+                      key={profile.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="grid grid-cols-12 gap-4 p-5 hover:bg-orange-50/50 transition-colors items-center group"
+                    >
+                      <div className="col-span-1 font-bold text-zinc-300 text-xl group-hover:text-[#EB5B39] transition-colors">{index + 1}</div>
+                      <div className="col-span-4 flex items-center gap-4 pl-2">
+                        <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center overflow-hidden border border-zinc-200">
+                          {profile.avatar_url ? (
+                            <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-zinc-400 font-bold">{profile.twitter_handle?.slice(0, 1)}</span>
+                          )}
+                        </div>
+                        <Link href={`/u/${profile.twitter_handle}`} className="font-medium text-zinc-900 group-hover:text-[#EB5B39] transition-colors truncate block">
+                          @{profile.twitter_handle}
+                        </Link>
                       </div>
-                      <a href={`https://x.com/${profile.twitter_handle}`} target="_blank" rel="noopener noreferrer" className="font-medium text-zinc-900 group-hover:text-[#EB5B39] transition-colors">
-                        @{profile.twitter_handle}
-                      </a>
+                      <div className="col-span-3 text-right font-bold text-zinc-900 font-mono text-lg">
+                        {formatCompactNumber(profile.total_tokens || 0)}
+                      </div>
+                      <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
+                        {(profile.input_tokens + profile.cache_read_tokens) > 0
+                          ? Math.round((profile.cache_read_tokens / (profile.input_tokens + profile.cache_read_tokens)) * 100)
+                          : 0}%
+                      </div>
+                      <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
+                        {formatCompactNumber(profile.cache_read_tokens || 0)}
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {user && hasMore && (
+                  <div ref={loaderRef} className="py-8 text-center text-zinc-400 font-mono text-sm animate-pulse">
+                    {loadingMore ? 'Loading more agents...' : 'Scroll to load more'}
+                  </div>
+                )}
+
+                {!user && profiles.length > 10 && (
+                  <div className="relative">
+                    {/* Blurred rows to tease */}
+                    <div className="divide-y divide-zinc-100 opacity-30 blur-[2px] pointer-events-none select-none overflow-hidden">
+                      {profiles.slice(10, 13).map((profile, index) => (
+                        <div key={profile.id} className="grid grid-cols-12 gap-4 p-5 items-center">
+                          <div className="col-span-1 text-zinc-400 font-bold text-xl">{11 + index}</div>
+                          <div className="col-span-4 flex items-center gap-4 pl-2">
+                            <div className="w-10 h-10 bg-zinc-100 rounded-lg"></div>
+                            <div className="font-bold text-zinc-900">@{profile.twitter_handle}</div>
+                          </div>
+                          <div className="col-span-3 text-right font-mono text-lg text-zinc-900">{formatCompactNumber(profile.total_tokens)}</div>
+                          <div className="col-span-2 text-right hidden md:block text-zinc-500">--%</div>
+                          <div className="col-span-2 text-right hidden md:block text-zinc-500">-</div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="col-span-3 text-right font-bold text-zinc-900 font-mono text-lg">
-                      {formatCompactNumber(profile.total_tokens || 0)}
+
+                    {/* CTA Overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-white via-white/80 to-transparent">
+                      <Link
+                        href="/auth/login"
+                        className="px-8 py-4 bg-[#EB5B39] hover:bg-[#d94e2f] text-white font-bold rounded-xl shadow-2xl shadow-orange-500/30 transition-all transform hover:scale-105 flex items-center gap-3 text-lg"
+                      >
+                        <Terminal className="w-6 h-6" />
+                        Connect Terminal to View Full Leaderboard
+                      </Link>
                     </div>
-                    <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
-                      {(profile.input_tokens + profile.cache_read_tokens) > 0
-                        ? Math.round((profile.cache_read_tokens / (profile.input_tokens + profile.cache_read_tokens)) * 100)
-                        : 0}%
-                    </div>
-                    <div className="col-span-2 text-right hidden md:block text-zinc-500 font-mono">
-                      {formatCompactNumber(profile.cache_read_tokens || 0)}
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
